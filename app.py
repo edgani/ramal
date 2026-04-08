@@ -252,6 +252,47 @@ def confidence_label(conf: float) -> str:
     return "rendah"
 
 
+def simple_value_text(value: float) -> str:
+    if value >= 35:
+        return "lagi cukup bagus"
+    if value >= 12:
+        return "lumayan oke"
+    if value > -12:
+        return "campur"
+    if value > -35:
+        return "perlu hati-hati"
+    return "lagi agak berat"
+
+
+def simple_alignment_text(label: str) -> str:
+    mapping = {
+        "searah": "cukup searah",
+        "lumayan searah": "lumayan nyambung",
+        "tarik-menarik": "masih tarik-menarik",
+    }
+    return mapping.get(label, label)
+
+
+def horizon_plain_name(h: Horizon) -> str:
+    return {
+        Horizon.DAILY: "Hari ini",
+        Horizon.WEEKLY: "7 hari ke depan",
+        Horizon.MONTHLY: "1 bulan ke depan",
+        Horizon.QUARTERLY: "3 bulan ke depan",
+        Horizon.YEARLY: "1 tahun ke depan",
+    }[h]
+
+
+def horizon_role_text(h: Horizon) -> str:
+    return {
+        Horizon.DAILY: "cocok buat lihat ritme dan sikap hari ini",
+        Horizon.WEEKLY: "cocok buat lihat arah dekat",
+        Horizon.MONTHLY: "ini biasanya jendela eksekusi utama",
+        Horizon.QUARTERLY: "ini nunjukin fase yang sedang berjalan",
+        Horizon.YEARLY: "ini konteks besar tahun ini",
+    }[h]
+
+
 def horizon_display(h: Horizon) -> str:
     return {
         Horizon.DAILY: "Daily",
@@ -283,22 +324,22 @@ def posture_from_consensus(consensus: ConsensusResult) -> Tuple[str, str]:
     avg_score = average_domain_score(consensus)
 
     if expansion >= 20 and decision >= 15 and instability > -15 and pressure > -15:
-        return "Push / Build", "lagi cukup oke untuk mendorong, membangun, dan menambah langkah"
+        return "Gas pelan tapi maju", "lagi cukup oke untuk melangkah, nambah progres, dan dorong hal yang memang penting"
     if recovery >= 15 and pressure > -5 and avg_score >= 5:
-        return "Reset / Refill", "lebih cocok untuk pulih, isi ulang tenaga, dan rapikan fondasi"
+        return "Isi ulang dulu", "lebih cocok buat pulih, atur napas, dan rapikan dasar sebelum lanjut"
     if instability <= -20 or pressure <= -20 or avg_score <= -15:
-        return "Protect / Slow Down", "lebih baik kurangi tempo, jaga energi, dan hindari dorong berlebihan"
-    return "Mixed / Selective", "bagus kalau pilih langkah yang benar-benar jelas, jangan semua dipaksa sekaligus"
+        return "Pelankan dan jaga", "lebih baik kurangi tempo, jaga energi, dan jangan paksa hal yang belum siap"
+    return "Pilih yang paling jelas", "langkah terbaik adalah pilih yang paling masuk akal dulu, jangan semua dibawa maju bareng"
 
 
 def alignment_bucket(consensus: ConsensusResult) -> str:
     agreement_values = [sig.agreement for sig in consensus.signals.values()]
     avg_agreement = sum(agreement_values) / len(agreement_values)
     if avg_agreement >= 75:
-        return "kompak"
+        return "searah"
     if avg_agreement >= 55:
-        return "lumayan kompak"
-    return "masih campur"
+        return "lumayan searah"
+    return "tarik-menarik"
 
 
 def concise_primary_message(consensus: ConsensusResult) -> str:
@@ -690,7 +731,7 @@ class ConsensusEngine:
         cautions = ", ".join(domain_display(d) for d, _ in top_cautions)
 
         return (
-            f"Untuk horizon {horizon_display(horizon)}, kondisi umum terlihat {tone}. "
+            f"Untuk horizon {horizon_plain_name(horizon)}, kondisi umum terlihat {tone}. "
             f"Area yang paling didukung: {strengths}. "
             f"Area yang perlu lebih hati-hati: {cautions}."
         )
@@ -815,12 +856,15 @@ def metric_color_html(value: float) -> str:
 
 
 def render_strength_box(title: str, status: str, confidence: str, agreement: str, hint: str) -> None:
+    meta_line = ""
+    if confidence or agreement:
+        meta_line = f'<div style="font-size:12px; opacity:0.8; margin-bottom:8px;">Keyakinan: {confidence or "-"} • Kekompakan: {agreement or "-"}</div>'
     st.markdown(
         f"""
         <div style="padding:14px 14px 10px 14px; border:1px solid rgba(255,255,255,0.08); border-radius:16px; background:rgba(255,255,255,0.03); margin-bottom:10px;">
             <div style="font-size:15px; font-weight:700; margin-bottom:6px;">{title}</div>
-            <div style="font-size:13px; opacity:0.95; margin-bottom:6px;">Status: <b>{status}</b></div>
-            <div style="font-size:12px; opacity:0.8; margin-bottom:8px;">Confidence: {confidence} • Agreement: {agreement}</div>
+            <div style="font-size:13px; opacity:0.95; margin-bottom:6px;">Kondisinya: <b>{status}</b></div>
+            {meta_line}
             <div style="font-size:13px; opacity:0.95;">{hint}</div>
         </div>
         """,
@@ -844,10 +888,10 @@ def render_phase_card(title: str, body: str, badge: str) -> None:
 def build_matrix(results: Dict[Horizon, Dict[str, object]]) -> List[Dict[str, object]]:
     rows = []
     for domain in DOMAINS:
-        row = {"Domain": domain_display(domain)}
+        row = {"Area hidup": domain_display(domain)}
         for horizon in HORIZON_ORDER:
             sig = results[horizon]["consensus"].signals[domain]
-            row[horizon_display(horizon)] = f"{sig.value:+.0f}"
+            row[horizon_plain_name(horizon)] = simple_value_text(sig.value)
         rows.append(row)
     return rows
 
@@ -909,15 +953,13 @@ def build_cross_horizon_story(results: Dict[Horizon, Dict[str, object]]) -> List
 # ============================================================
 
 def app_header() -> None:
-    st.title("🔮 Fortune Consensus Engine")
+    st.title("🔮 Peta Fase Pribadi")
     st.caption(
-        "Framework multi-horizon yang menggabungkan beberapa sistem secara terstruktur, "
-        "dengan bahasa depan yang dibuat sesimpel mungkin untuk pembaca awam."
+        "Bacaan multi-horizon yang diringkas ke bahasa sederhana: apa yang lagi enak didorong, apa yang perlu dijaga, dan langkah paling masuk akal sekarang."
     )
 
     st.info(
-        "Catatan jujur: versi ini adalah **prototype framework yang repeatable**, bukan kalkulator tradisional penuh untuk BaZi/Saju, Vedic, Western natal, atau I Ching. "
-        "Tujuannya: bikin fondasi app yang rapi, gampang dibaca, dan gampang di-upgrade nanti."
+        "Catatan jujur: versi ini masih **prototype yang repeatable**, jadi anggap sebagai kerangka baca yang rapi dan konsisten dulu — belum kalkulator tradisional penuh."
     )
 
 
@@ -939,8 +981,8 @@ def sidebar_form() -> Tuple[BirthProfile, ContextInput, bool, bool]:
             value="Bikin output yang gampang dimengerti orang awam.",
             height=80,
         )
-        beginner_mode = st.checkbox("Mode awam / simple", value=True)
-        show_advanced = st.checkbox("Tampilkan detail advanced", value=False)
+        beginner_mode = st.checkbox("Pakai bahasa yang lebih awam", value=True)
+        show_advanced = st.checkbox("Tampilkan angka & detail teknis", value=False)
         st.button("Jalankan engine", use_container_width=True)
 
     profile = BirthProfile(
@@ -955,36 +997,40 @@ def sidebar_form() -> Tuple[BirthProfile, ContextInput, bool, bool]:
 
 
 def render_beginner_guide() -> None:
-    with st.expander("Cara baca hasil ini biar nggak bingung", expanded=False):
+    with st.expander("Cara paling gampang baca hasil ini", expanded=False):
         st.markdown(
             """
-- **Daily** = ritme hari ini. Cocok buat lihat perlu gas, tahan, atau observasi.
-- **Weekly** = tema dekat 5–7 hari.
-- **Monthly** = jendela eksekusi utama. Ini biasanya lebih penting daripada daily.
-- **Quarterly** = fase 3 bulan. Bagus untuk keputusan yang agak besar.
-- **Yearly** = tema besar tahun. Ini konteks paling luas.
+**Kalau cuma mau ambil intinya:**
 
-Biar nggak ketipu noise:
-- jangan jadikan **daily** sebagai raja
-- lihat apakah **monthly + quarterly** searah atau tabrakan
-- kalau sinyalnya campur, langkah terbaik biasanya bukan gas penuh, tapi pilih yang paling jelas dulu
+- Lihat **Hari ini** buat tahu ritme dan sikap terbaik sekarang.
+- Lihat **1 bulan ke depan** buat tahu ini lagi fase yang enak didorong atau jangan dipaksa.
+- Lihat **3 bulan ke depan** buat tahu arah besar yang sedang berjalan.
+- Lihat **1 tahun ke depan** cuma sebagai konteks umum, bukan keputusan harian.
+
+**Cara bacanya yang aman:**
+
+- kalau **1 bulan** dan **3 bulan** searah, biasanya itu sinyal yang lebih penting
+- kalau **Hari ini** jelek tapi **1 bulan** bagus, berarti bukan fasenya jelek — cuma timing harinya kurang pas
+- kalau semuanya campur, jangan gas semua hal sekaligus; pilih yang paling jelas dulu
             """
         )
 
 
 def render_overview(results: Dict[Horizon, Dict[str, object]]) -> None:
-    st.subheader("Ringkasan cepat")
+    st.subheader("Inti per waktu")
     cols = st.columns(5)
     for idx, horizon in enumerate(HORIZON_ORDER):
         ex = results[horizon]["explanation"]
-        avg_score = average_domain_score(results[horizon]["consensus"])
+        consensus = results[horizon]["consensus"]
+        avg_score = average_domain_score(consensus)
+        best_domain, _ = consensus.top_strengths[0]
         cols[idx].markdown(
             f"""
-            <div style="padding:14px; border-radius:16px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.03); min-height:158px;">
-                <div style="font-size:13px; opacity:0.8; margin-bottom:8px;">{horizon_display(horizon)}</div>
-                <div style="font-size:20px; font-weight:700; margin-bottom:8px;">{label_for_value(avg_score)}</div>
-                <div style="font-size:12px; opacity:0.8; margin-bottom:8px;">Posture: <b>{ex['posture']}</b></div>
-                <div style="font-size:12px; opacity:0.88; line-height:1.4;">{ex['action']}</div>
+            <div style="padding:14px; border-radius:16px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.03); min-height:180px;">
+                <div style="font-size:13px; opacity:0.8; margin-bottom:8px;">{horizon_plain_name(horizon)}</div>
+                <div style="font-size:21px; font-weight:700; margin-bottom:8px;">{simple_value_text(avg_score)}</div>
+                <div style="font-size:12px; opacity:0.8; margin-bottom:8px;">Fokus utama: <b>{domain_display(best_domain)}</b></div>
+                <div style="font-size:12px; opacity:0.88; line-height:1.45;">{ex['action']}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -996,35 +1042,37 @@ def render_you_are_here(results: Dict[Horizon, Dict[str, object]]) -> None:
     c1, c2, c3 = st.columns([1.25, 1.05, 1.05])
     with c1:
         render_phase_card(
-            f"You are here: {card['posture']}",
-            f"Horizon yang paling dominan sekarang: {card['horizon']}. {card['detail']}",
-            "Fase utama sekarang",
+            f"Posisi utama sekarang: {card['posture']}",
+            f"Yang paling dominan sekarang itu horizon {card['horizon']}. Jadi fokus utama bacanya ada di sana: {card['detail']}",
+            "Kalau cuma baca 1 bagian, baca ini",
         )
     with c2:
         render_phase_card(
-            "Area paling enak didorong",
+            "Yang paling enak didorong",
             f"{card['best_area']}.",
-            f"Alignment: {card['alignment']}",
+            f"Sinyalnya {simple_alignment_text(card['alignment'])}",
         )
     with c3:
         render_phase_card(
-            "Area paling perlu dijaga",
+            "Yang paling perlu dijaga",
             f"{card['risk_area']}.",
-            "Fokus perlindungan",
+            "Jangan dipaksa berlebihan",
         )
 
-    st.success(card["action"])
+    st.success(f"Intinya: {card['action']}")
 
 
 def render_cross_horizon_story(results: Dict[Horizon, Dict[str, object]]) -> None:
-    st.subheader("Story lintas horizon")
+    st.subheader("Cerita singkat dari dekat ke jauh")
     story = build_cross_horizon_story(results)
     cols = st.columns(5)
     for idx, (title, text) in enumerate(story):
+        horizon = HORIZON_ORDER[idx]
         cols[idx].markdown(
             f"""
-            <div style="padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.025); min-height:138px;">
+            <div style="padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.025); min-height:150px;">
                 <div style="font-weight:700; margin-bottom:8px;">{title}</div>
+                <div style="font-size:12px; opacity:0.72; margin-bottom:6px;">{horizon_role_text(horizon)}</div>
                 <div style="font-size:13px; opacity:0.9; line-height:1.45;">{text}</div>
             </div>
             """,
@@ -1036,41 +1084,56 @@ def render_horizon_tab(bundle: Dict[str, object], beginner_mode: bool, show_adva
     explanation = bundle["explanation"]
     consensus: ConsensusResult = bundle["consensus"]
     systems: List[SystemResult] = bundle["systems"]
+    horizon = consensus.horizon
 
-    st.markdown(f"### {horizon_display(consensus.horizon)}")
+    st.markdown(f"### {horizon_plain_name(horizon)}")
     st.write(explanation["summary"])
 
-    c_top1, c_top2, c_top3 = st.columns(3)
-    c_top1.metric("Posture", explanation["posture"])
-    c_top2.metric("Alignment", explanation["alignment"])
-    c_top3.metric("Rata-rata skor", f"{average_domain_score(consensus):+.0f}")
+    best_domain, best_sig = consensus.top_strengths[0]
+    weak_domain, weak_sig = consensus.top_cautions[0]
 
-    st.markdown("#### Saran praktis")
+    c_top1, c_top2, c_top3 = st.columns(3)
+    c_top1.metric("Kondisi umum", simple_value_text(average_domain_score(consensus)))
+    c_top2.metric("Paling enak didorong", domain_display(best_domain))
+    c_top3.metric("Paling perlu dijaga", domain_display(weak_domain))
+
+    st.markdown("#### Kalau mau baca cepat")
     st.success(explanation["action"])
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("#### Apa yang lagi kuat")
+        st.markdown("#### Yang lagi lebih enak")
         for item in explanation["strengths"]:
-            render_strength_box(item["domain"], item["status"], item["confidence"], item["agreement"], item["plain_hint"])
+            if beginner_mode:
+                render_strength_box(item["domain"], item["status"], "", "", item["plain_hint"])
+            else:
+                render_strength_box(item["domain"], item["status"], item["confidence"], item["agreement"], item["plain_hint"])
 
     with c2:
-        st.markdown("#### Apa yang perlu hati-hati")
+        st.markdown("#### Yang mending dijaga dulu")
         for item in explanation["cautions"]:
-            render_strength_box(item["domain"], item["status"], item["confidence"], item["agreement"], item["plain_hint"])
+            if beginner_mode:
+                render_strength_box(item["domain"], item["status"], "", "", item["plain_hint"])
+            else:
+                render_strength_box(item["domain"], item["status"], item["confidence"], item["agreement"], item["plain_hint"])
 
-    st.markdown("#### Semua domain")
+    st.markdown("#### Ringkasan semua area")
     domain_cols = st.columns(2)
     for idx, domain in enumerate(DOMAINS):
         sig = consensus.signals[domain]
         target_col = domain_cols[idx % 2]
         hint = sign_text(domain, sig.value)
-        body = f"Status: {label_for_value(sig.value)} • Confidence: {confidence_label(sig.confidence)} • Agreement: {sig.agreement:.0f}%"
+        if beginner_mode:
+            body = f"Status: {simple_value_text(sig.value)}"
+            pill = label_for_value(sig.value)
+        else:
+            body = f"Status: {label_for_value(sig.value)} • Confidence: {confidence_label(sig.confidence)} • Agreement: {sig.agreement:.0f}%"
+            pill = f"{sig.value:+.0f}"
         target_col.markdown(
             f"""
             <div style="padding:12px 14px; border-radius:14px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.025); margin-bottom:8px;">
                 <div style="font-weight:700; margin-bottom:6px;">{domain_display(domain)}</div>
-                <div style="margin-bottom:8px;"><span style="{metric_color_html(sig.value)}">{sig.value:+.0f}</span></div>
+                <div style="margin-bottom:8px;"><span style="{metric_color_html(sig.value)}">{pill}</span></div>
                 <div style="font-size:12px; opacity:0.85; margin-bottom:6px;">{body}</div>
                 <div style="font-size:12px; opacity:0.92;">{hint}</div>
             </div>
@@ -1078,28 +1141,24 @@ def render_horizon_tab(bundle: Dict[str, object], beginner_mode: bool, show_adva
             unsafe_allow_html=True,
         )
 
-    if beginner_mode:
-        best_domain, best_sig = consensus.top_strengths[0]
-        weak_domain, weak_sig = consensus.top_cautions[0]
-        st.info(
-            f"Versi singkat: di {horizon_display(consensus.horizon)} ini, yang paling enak didorong adalah **{domain_display(best_domain)}** ({label_for_value(best_sig.value)}), "
-            f"sementara yang paling perlu dijaga adalah **{domain_display(weak_domain)}** ({label_for_value(weak_sig.value)})."
-        )
+    st.info(
+        f"Versi sangat singkat: untuk {horizon_plain_name(horizon).lower()} ini, fokus terbaik ada di **{domain_display(best_domain)}**, sedangkan yang jangan terlalu dipaksa adalah **{domain_display(weak_domain)}**."
+    )
 
     if show_advanced:
-        with st.expander("Advanced detail: consensus & methodology", expanded=False):
-            st.markdown("**Methodology notes per engine**")
+        with st.expander("Detail advanced: angka dan metodologi", expanded=False):
+            st.markdown("**Catatan metode per engine**")
             for system in systems:
                 st.markdown(f"- **{system.system_name}**: {system.methodology_note}")
 
-            st.markdown("**Raw consensus detail**")
+            st.markdown("**Angka detail consensus**")
             for domain in DOMAINS:
                 sig = consensus.signals[domain]
                 st.markdown(
                     f"- **{domain_display(domain)}** → value `{sig.value:+.2f}` | confidence `{sig.confidence:.2f}` | agreement `{sig.agreement:.2f}%` | conflict penalty `{sig.conflict_penalty:.2f}`"
                 )
 
-            st.markdown("**System summaries**")
+            st.markdown("**Ringkasan per sistem**")
             for system in systems:
                 st.markdown(f"- **{system.system_name}**: {system.summary}")
 
@@ -1124,20 +1183,20 @@ def main() -> None:
     render_cross_horizon_story(results)
 
     st.markdown("---")
-    st.subheader("Matrix lintas horizon")
-    st.caption("Biar pembaca awam langsung lihat mana yang cuma gangguan harian dan mana yang memang fase besar.")
+    st.subheader("Tabel ringkas semua area")
+    st.caption("Tabel ini buat lihat cepat: area mana yang cuma jelek di hari ini, dan area mana yang memang lagi berat di fase yang lebih besar.")
     matrix_rows = build_matrix(results)
     st.dataframe(matrix_rows, use_container_width=True, hide_index=True)
 
     st.markdown("---")
-    st.subheader("One-line action map")
+    st.subheader("Kalimat singkat per waktu")
     band = build_summary_band(results)
     band_cols = st.columns(5)
     for idx, horizon in enumerate(HORIZON_ORDER):
         band_cols[idx].markdown(
             f"""
             <div style="padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.025); min-height:128px;">
-                <div style="font-weight:700; margin-bottom:6px;">{horizon_display(horizon)}</div>
+                <div style="font-weight:700; margin-bottom:6px;">{horizon_plain_name(horizon)}</div>
                 <div style="font-size:13px; opacity:0.9; line-height:1.45;">{band[horizon_display(horizon)]}</div>
             </div>
             """,
@@ -1145,7 +1204,7 @@ def main() -> None:
         )
 
     st.markdown("---")
-    st.subheader("Detail per horizon")
+    st.subheader("Baca detail per waktu")
     tabs = st.tabs([horizon_display(h) for h in HORIZON_ORDER])
     for tab, horizon in zip(tabs, HORIZON_ORDER):
         with tab:
@@ -1163,7 +1222,7 @@ def main() -> None:
     )
 
     st.markdown("---")
-    st.subheader("Apa langkah berikutnya supaya ini naik level")
+    st.subheader("Kalau nanti mau dinaikkan levelnya")
     st.markdown(
         """
 1. **Ganti prototype engine dengan kalkulator tradisional yang benar** untuk BaZi/Saju, Vedic, Western natal, dan I Ching.
